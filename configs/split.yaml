@@ -1,0 +1,5 @@
+# Train/val/test split of UPMC Food-101 (run once: modal run modal_app.py::split_data)
+data_dir: /data                 # food101-data volume mount point
+splits_dir: /data/splits        # where train.csv / val.csv / test.csv are written
+val_fraction: 0.1               # 90/10 train/val, carved from the official train set
+seed: 42                        # CHOICE: any fixed value; the paper gives no split seed

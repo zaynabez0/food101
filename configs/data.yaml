@@ -1,0 +1,20 @@
+# Data settings shared by every experiment (image / text / fusion)
+data_dir: /data                 # food101-data volume mount point
+splits_dir: /data/splits        # written by src/split.py
+
+# --- Images (InceptionV3 input) ---
+image_size: 299                 # InceptionV3 input resolution
+eval_resize: 342                # CHOICE: val/test resize shorter side to 342 then center-crop 299,
+                                #         same as torchvision's Inception_V3 ImageNet preprocessing
+crop_scale: [0.08, 1.0]         # CHOICE: RandomResizedCrop area range = torchvision default
+imagenet_mean: [0.485, 0.456, 0.406]
+imagenet_std: [0.229, 0.224, 0.225]
+
+# --- Text (BERT input) ---
+tokenizer_name: bert-base-uncased
+max_length: 64                  # CHOICE: tokens per title incl. [CLS]/[SEP]; titles are short web
+                                #         page titles, the smoke test prints how many hit this limit
+
+# --- Loading ---
+num_workers: 4
+smoke_test_batch_size: 8
