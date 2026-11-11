@@ -2,6 +2,8 @@
 
 Only infrastructure lives here; it calls into src/train.py.
 """
+from typing import Callable
+
 import modal
 
 # --- App: groups all functions of this project under one name in Modal ---
@@ -186,3 +188,132 @@ def test_data(config_name: str = "data.yaml") -> None:
     from src.split import load_config
 
     smoke_test(load_config(f"{CONFIGS_DIR}/{config_name}"))
+
+
+# --- Image model shape check: dummy batch through ImageClassifier (CPU only) ---
+@app.function(image=image, cpu=4)
+def test_image_model(config_name: str = "image.yaml") -> None:
+    """Run src/models/image.py's shape check with configs/<config_name>."""
+    from src.models.image import shape_check
+    from src.split import load_config
+
+    shape_check(load_config(f"{CONFIGS_DIR}/{config_name}"))
+
+
+# --- Training loop smoke test: toy model, 2 epochs, then resume (cheap GPU to exercise AMP) ---
+@app.function(image=image, gpu="any")
+def test_train() -> None:
+    """Run src/train.py's smoke test."""
+    from src.train import smoke_test
+
+    smoke_test()
+
+
+# --- Image model training: InceptionV3 on UPMC Food-101 images ---
+CKPT_DIR = "/ckpt"                       # where ckpt_volume is mounted
+TRAIN_TIMEOUT_S = 8 * 60 * 60            # 8 hours (Modal's maximum is 24 h)
+
+
+@app.function(
+    image=image,
+    gpu=["L4", "A10G","T4"],  # Modal will pick any available GPU from this list
+    cpu=8,                               # matches num_workers: 8 in image.yaml
+    timeout=TRAIN_TIMEOUT_S,
+    volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+)
+def train_image(smoke: bool = False, config_name: str = "image.yaml") -> None:
+    """Train the image model with configs/data.yaml + configs/<config_name>.
+
+    smoke: 2 epochs on 500 images per split, in a separate run that always starts fresh.
+    Re-running without --smoke resumes from /ckpt/<run_name>/last.pt if it exists.
+    """
+    from src.models.image import build_image_model
+
+    run_training(config_name, "image", build_image_model, smoke)
+
+
+# --- Text model training: BERT + LSTM on UPMC Food-101 titles ---
+@app.function(
+    image=image,
+    gpu=["L4", "A10G", "T4"],  # Modal will pick any available GPU from this list
+    cpu=4,                     # text batches are pre-tokenized tensors: little CPU work
+    timeout=TRAIN_TIMEOUT_S,
+    volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+)
+def train_text(smoke: bool = False, config_name: str = "text.yaml") -> None:
+    """Train the text model with configs/data.yaml + configs/<config_name> (same options as train_image)."""
+    from src.models.text import build_text_model
+
+    run_training(config_name, "text", build_text_model, smoke)
+
+
+def run_training(config_name: str, mode: str, build_model: Callable[[dict], object], smoke: bool) -> None:
+    """Shared body of train_image / train_text; runs inside the Modal container.
+
+    Merges data.yaml + configs/<config_name>, names the run after the config file
+    ("image", "text", or "<name>_smoke"), builds the model and calls src.train.train_model.
+    """
+    import os
+    import shutil
+
+    from src.split import load_config
+    from src.train import train_model
+
+    # the model config overrides data.yaml where they share a key (e.g. num_workers, max_length)
+    config = {**load_config(f"{CONFIGS_DIR}/data.yaml"), **load_config(f"{CONFIGS_DIR}/{config_name}")}
+    run_name = os.path.splitext(config_name)[0]
+    max_items = None
+    if smoke:
+        run_name += "_smoke"
+        config["epochs"], max_items = config["smoke_epochs"], config["smoke_max_items"]
+        shutil.rmtree(f"{CKPT_DIR}/{run_name}", ignore_errors=True)  # smoke never resumes
+
+    print(f"run '{run_name}' (mode={mode}): {config['epochs']} epochs, max_items={max_items}")
+    train_model(
+        build_model(config),
+        config,
+        mode=mode,
+        ckpt_dir=f"{CKPT_DIR}/{run_name}",
+        results_path=f"{CKPT_DIR}/results/{run_name}.json",
+        max_items=max_items,
+        on_epoch_end=ckpt_volume.commit,  # persist checkpoints + JSON after every epoch
+    )
+
+
+# --- Text model shape check: dummy batch through TextClassifier (CPU only) ---
+@app.function(image=image, cpu=4)
+def test_text_model(config_name: str = "text.yaml") -> None:
+    """Run src/models/text.py's shape check with configs/data.yaml + configs/<config_name>."""
+    from src.models.text import shape_check
+    from src.split import load_config
+
+    shape_check({**load_config(f"{CONFIGS_DIR}/data.yaml"), **load_config(f"{CONFIGS_DIR}/{config_name}")})
+
+
+# --- Phase 4 feature caching: best (or given) checkpoints -> /ckpt/features/{split}.pt ---
+@app.function(
+    image=image,
+    gpu=["L4", "A10G", "T4"],
+    cpu=8,                     # matches num_workers: 8 in extract.yaml (JPEG decoding)
+    timeout=TRAIN_TIMEOUT_S,
+    volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+)
+def extract_features(image_ckpt: str = "", text_ckpt: str = "") -> None:
+    """Run src/extract.py. image_ckpt / text_ckpt override the best.pt paths of configs/extract.yaml."""
+    from src.extract import run_extraction
+    from src.models.image import build_image_model
+    from src.models.text import build_text_model
+    from src.split import load_config
+
+    data = load_config(f"{CONFIGS_DIR}/data.yaml")
+    image_cfg = {**data, **load_config(f"{CONFIGS_DIR}/image.yaml")}
+    text_cfg = {**data, **load_config(f"{CONFIGS_DIR}/text.yaml")}
+    # dataset/tokenizer settings come from text.yaml (same max_length as in training), loop from extract.yaml
+    config = {**text_cfg, **load_config(f"{CONFIGS_DIR}/extract.yaml")}
+    if image_ckpt:
+        config["image_checkpoint"] = image_ckpt
+    if text_ckpt:
+        config["text_checkpoint"] = text_ckpt
+
+    run_extraction(config, build_image_model(image_cfg), build_text_model(text_cfg),
+                   on_split_done=ckpt_volume.commit)

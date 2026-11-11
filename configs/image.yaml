@@ -1,1 +1,26 @@
-# Hyperparameters for: image. Filled in when the corresponding module is implemented.
+# Image model: InceptionV3 + Table I head
+model: image
+optimizer: sgd
+momentum: 0.9          # CHOICE: not stated in the paper
+lr: 0.01
+lr_schedule: [0.01, 0.001, 0.0005]   # paper: lowered as epochs increase
+scheduler: plateau     # CHOICE: drop when val acc stalls (paper used test)
+patience: 2
+epochs: 30             # CHOICE: not stated in the paper
+batch_size: 64
+num_workers: 8
+seed: 42
+
+# --- Architecture (Table I) ---
+num_classes: 101
+pool_size: 8           # Table I: AvgPool 8x8 over Mixed_7c's (2048, 8, 8) output
+dropout: 0.4           # Table I
+use_aux_logits: true   # CHOICE: keep InceptionV3's auxiliary classifier as a training-only regularizer
+aux_loss_weight: 0.4   # CHOICE: weight of the aux loss (value used in PyTorch's Inception fine-tuning tutorial)
+pretrained: true       # ImageNet weights (torchvision IMAGENET1K_V1)
+
+# --- Loop ---
+amp: true              # mixed precision on GPU
+log_every: 100         # print the batch loss every N steps (0 = off)
+smoke_epochs: 2        # --smoke: quick end-to-end check
+smoke_max_items: 500   # --smoke: images used per split

@@ -9,7 +9,7 @@ import os
 import pandas as pd
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision.transforms import v2
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
@@ -80,24 +80,31 @@ class FoodDataset(Dataset):
         mode: str,
         config: dict,
         tokenizer: PreTrainedTokenizerBase | None = None,
+        augment: bool | None = None,
     ) -> None:
-        """split: "train" / "val" / "test"; mode: "image" / "text" / "both"."""
+        """split: "train" / "val" / "test"; mode: "image" / "text" / "both".
+
+        augment: random crop + flip on images; None = only for the train split.
+        """
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
         self.use_image = mode in ("image", "both")
         self.use_text = mode in ("text", "both")
+        augment = (split == "train") if augment is None else augment
 
         df = pd.read_csv(os.path.join(config["splits_dir"], f"{split}.csv"))
+        self.sample_ids = df["image"].tolist()  # image filename, e.g. "apple_pie_107.jpg"; unique id
         class_to_idx = {name: i for i, name in enumerate(load_class_names(config["data_dir"]))}
         self.labels = torch.tensor(df["label"].map(class_to_idx).to_numpy())  # (N,) int64
 
-        # val rows were carved from the official train set, so their images live in images/train
-        image_folder = "test" if split == "test" else "train"
-        images_dir = os.path.join(config["data_dir"], "images", image_folder)
-        self.image_paths = [
-            os.path.join(images_dir, label, image) for label, image in zip(df["label"], df["image"])
-        ]
-        self.transform = build_image_transform(config, train=(split == "train"))
+        if self.use_image:  # text mode: no image paths, no transforms, no file is ever opened
+            # val rows were carved from the official train set, so their images live in images/train
+            image_folder = "test" if split == "test" else "train"
+            images_dir = os.path.join(config["data_dir"], "images", image_folder)
+            self.image_paths = [
+                os.path.join(images_dir, label, image) for label, image in zip(df["label"], df["image"])
+            ]
+            self.transform = build_image_transform(config, train=augment)
 
         if self.use_text:
             tokenizer = tokenizer or load_tokenizer(config)
@@ -126,9 +133,13 @@ def make_dataloader(
     config: dict,
     batch_size: int,
     tokenizer: PreTrainedTokenizerBase | None = None,
+    max_items: int | None = None,
 ) -> DataLoader:
-    """DataLoader over one split; shuffled only for train."""
+    """DataLoader over one split; shuffled only for train. max_items keeps only the first N items."""
     dataset = FoodDataset(split, mode, config, tokenizer)
+    if max_items is not None:
+        # split CSVs are already shuffled by train_test_split, so the first N cover many classes
+        dataset = Subset(dataset, range(min(max_items, len(dataset))))
     return DataLoader(
         dataset,
         batch_size=batch_size,

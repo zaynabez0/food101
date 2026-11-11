@@ -1,1 +1,31 @@
-# Hyperparameters for: text. Filled in when the corresponding module is implemented.
+# Text model: BERT -> LSTM -> MLP head (Table II)
+# The BERT checkpoint is data.yaml's tokenizer_name, so tokenizer and model always match.
+
+# --- Architecture (Table II) ---
+num_classes: 101
+lstm_hidden: 128       # Table II: LSTM with 128 units
+hidden_dim: 256        # Table II: Dense 256 + ReLU
+dropout: 0.5           # Table II: both Dropout layers
+freeze_bert: true      # CHOICE: BERT used as a frozen feature extractor (only LSTM + head train)
+
+model: text
+freeze_bert: true        # CHOICE: lr=1e-3 suggests BERT was frozen
+optimizer: adam
+lr: 0.001
+scheduler: plateau       # paper: ReduceLROnPlateau
+patience: 2
+factor: 0.1
+early_stopping: 5        # CHOICE: paper stopped after epoch 26
+epochs: 40
+batch_size: 128
+max_length: 64           # check the title length distribution
+lstm_units: 128
+dense_units: 256
+dropout: 0.5
+seed: 42
+
+# --- Loop ---
+amp: true              # mixed precision on GPU
+log_every: 100         # print the batch loss every N steps (0 = off)
+smoke_epochs: 2        # --smoke: quick end-to-end check
+smoke_max_items: 500   # --smoke: titles used per split

@@ -1,0 +1,8 @@
+# Phase 4 feature caching: run the trained image + text models once over every split.
+image_checkpoint: /ckpt/image/best.pt   # override: --image-ckpt /ckpt/image/last.pt
+text_checkpoint: /ckpt/text/best.pt     # override: --text-ckpt /ckpt/text/last.pt
+features_dir: /ckpt/features            # writes {train,val,test}.pt
+splits: [train, val, test]
+batch_size: 128                         # inference only: no gradients, so larger than training
+num_workers: 8
+amp: true                               # float16 forward like the training-time val pass; saved as float32
