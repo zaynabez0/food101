@@ -1,0 +1,6 @@
+data/
+checkpoints/
+*.pt
+.env
+kaggle.json
+food101/
