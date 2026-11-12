@@ -2,7 +2,7 @@
 
 For each split, saves to <features_dir>/<split>.pt a dict of row-aligned tensors (row i = same sample):
     image_features (N, 2048)  image_probs (N, 101)  text_features (N, 128)  text_probs (N, 101)
-    labels (N,)  sample_ids [N image filenames]  checkpoints {image: path, text: path}
+    labels (N,)  sample_ids [N image filenames]  checkpoints {image/text: {path, epoch, val_acc}}
 No augmentation on any split (eval transforms, also for train) and no shuffling.
 """
 import os
@@ -16,14 +16,15 @@ from src.data import FoodDataset, load_tokenizer
 from src.train import get_device
 
 
-def load_checkpoint(model: nn.Module, path: str, device: torch.device) -> float:
-    """Load best.pt or last.pt weights into model. Out: the val accuracy recorded for those weights."""
+def load_checkpoint(model: nn.Module, path: str, device: torch.device) -> dict:
+    """Load best.pt or last.pt weights into model. Out: {path, epoch, val_acc} of those weights."""
     ckpt = torch.load(path, map_location=device, weights_only=True)
     model.load_state_dict(ckpt["model"])
     # best.pt stores val_acc directly; last.pt stores the history, whose last row matches its weights
     val_acc = ckpt["val_acc"] if "val_acc" in ckpt else ckpt["history"][-1]["val_acc"]
     print(f"loaded {path} (epoch {ckpt['epoch']}, logged val acc {val_acc:.4f})")
-    return val_acc
+    # the epoch matters: last.pt keeps the same path while training moves on
+    return {"path": path, "epoch": ckpt["epoch"], "val_acc": val_acc}
 
 
 @torch.inference_mode()
@@ -97,7 +98,7 @@ def run_extraction(
     for split in config["splits"]:
         print(f"\n[{split}]")
         out = extract_split(split, image_model, text_model, config, device)
-        out["checkpoints"] = {"image": config["image_checkpoint"], "text": config["text_checkpoint"]}
+        out["checkpoints"] = logged   # {image: {path, epoch, val_acc}, text: {...}}
         path = os.path.join(config["features_dir"], f"{split}.pt")
         torch.save(out, path)
         print(f"  saved {path}: " + ", ".join(
@@ -106,7 +107,7 @@ def run_extraction(
         if split in ("val", "test"):
             for name in ("image", "text"):
                 acc = accuracy(out[f"{name}_probs"], out["labels"])
-                note = f" (training log val acc {logged[name]:.4f})" if split == "val" else ""
+                note = f" (training log val acc {logged[name]['val_acc']:.4f})" if split == "val" else ""
                 print(f"  {name:>5} acc from saved softmax: {acc:.4f}{note}")
         if on_split_done is not None:
             on_split_done()

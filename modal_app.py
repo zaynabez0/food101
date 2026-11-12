@@ -298,8 +298,9 @@ def test_text_model(config_name: str = "text.yaml") -> None:
     timeout=TRAIN_TIMEOUT_S,
     volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
 )
-def extract_features(image_ckpt: str = "", text_ckpt: str = "") -> None:
-    """Run src/extract.py. image_ckpt / text_ckpt override the best.pt paths of configs/extract.yaml."""
+def extract_features(image_ckpt: str = "", text_ckpt: str = "", splits: str = "") -> None:
+    """Run src/extract.py. image_ckpt / text_ckpt override the best.pt paths of configs/extract.yaml;
+    splits (e.g. "test" or "val,test") overrides its list of splits."""
     from src.extract import run_extraction
     from src.models.image import build_image_model
     from src.models.text import build_text_model
@@ -314,6 +315,8 @@ def extract_features(image_ckpt: str = "", text_ckpt: str = "") -> None:
         config["image_checkpoint"] = image_ckpt
     if text_ckpt:
         config["text_checkpoint"] = text_ckpt
+    if splits:
+        config["splits"] = splits.split(",")
 
     run_extraction(config, build_image_model(image_cfg), build_text_model(text_cfg),
                    on_split_done=ckpt_volume.commit)
