@@ -1,0 +1,68 @@
+{
+  "config": {
+    "data_dir": "/data",
+    "splits_dir": "/data/splits",
+    "image_size": 299,
+    "eval_resize": 342,
+    "crop_scale": [
+      0.08,
+      1.0
+    ],
+    "imagenet_mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "imagenet_std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "tokenizer_name": "bert-base-uncased",
+    "max_length": 64,
+    "num_workers": 4,
+    "smoke_test_batch_size": 8,
+    "num_classes": 101,
+    "lstm_hidden": 128,
+    "hidden_dim": 256,
+    "dropout": 0.5,
+    "freeze_bert": true,
+    "model": "text",
+    "optimizer": "adam",
+    "lr": 0.001,
+    "scheduler": "plateau",
+    "patience": 2,
+    "factor": 0.1,
+    "early_stopping": 5,
+    "epochs": 2,
+    "batch_size": 128,
+    "lstm_units": 128,
+    "dense_units": 256,
+    "seed": 42,
+    "amp": true,
+    "log_every": 100,
+    "smoke_epochs": 2,
+    "smoke_max_items": 500
+  },
+  "best_val_acc": 0.012,
+  "history": [
+    {
+      "epoch": 1,
+      "lr": 0.001,
+      "time_s": 4.6,
+      "train_loss": 4.6209296875,
+      "train_acc": 0.014,
+      "val_loss": 4.61375,
+      "val_acc": 0.012
+    },
+    {
+      "epoch": 2,
+      "lr": 0.001,
+      "time_s": 2.6,
+      "train_loss": 4.5979453125,
+      "train_acc": 0.016,
+      "val_loss": 4.613953125,
+      "val_acc": 0.006
+    }
+  ]
+}

@@ -373,14 +373,41 @@ def eval_baselines(config_name: str = "late_fusion.yaml") -> None:
     timeout=FUSION_TIMEOUT_S,
     volumes={CKPT_DIR: ckpt_volume},
 )
-def train_early(config_name: str = "early_fusion.yaml") -> None:
+def train_early(config_name: str = "early_fusion.yaml", seed: int = -1) -> None:
     """Train EarlyFusion on /ckpt/features/{split}.pt.
 
     Writes /ckpt/early/{best,last}.pt, /ckpt/results/early.json and
     /ckpt/results/early_test_predictions.csv (id, label, image / text / early fusion prediction).
+    seed >= 0: overrides the config seed and names the run early_seed<seed> (does not overwrite "early").
     """
     from src.split import load_config
     from src.train_fusion import train_early_fusion
 
-    train_early_fusion(load_config(f"{CONFIGS_DIR}/{config_name}"), CKPT_DIR, on_epoch_end=ckpt_volume.commit)
+    config = load_config(f"{CONFIGS_DIR}/{config_name}")
+    run_name = "early"
+    if seed >= 0:
+        config["seed"], run_name = seed, f"early_seed{seed}"
+    train_early_fusion(config, CKPT_DIR, on_epoch_end=ckpt_volume.commit, run_name=run_name)
     ckpt_volume.commit()                 # final JSON + CSV
+
+
+# --- Error-analysis examples: random test images of cases (a), (b), (c), with their titles ---
+@app.function(image=image, cpu=2, volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume})
+def export_examples(n_per_case: int = 4, seed: int = 0) -> None:
+    """Copy n_per_case images per case to /ckpt/examples/<case>/ + /ckpt/examples/examples.csv.
+
+    Download with: modal volume get food101-ckpt examples results/
+    """
+    from src.examples import export_examples as run_export
+    from src.split import load_config
+
+    data = load_config(f"{CONFIGS_DIR}/data.yaml")
+    run_export(
+        predictions_csv=f"{CKPT_DIR}/results/early_test_predictions.csv",
+        test_csv=f"{data['splits_dir']}/test.csv",
+        data_dir=data["data_dir"],
+        out_dir=f"{CKPT_DIR}/examples",
+        n_per_case=n_per_case,
+        seed=seed,
+    )
+    ckpt_volume.commit()

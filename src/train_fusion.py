@@ -202,8 +202,11 @@ def train_late_fusion(
 
 
 def train_early_fusion(
-    config: dict, ckpt_root: str, on_epoch_end: Callable[[], None] | None = None
+    config: dict, ckpt_root: str, on_epoch_end: Callable[[], None] | None = None, run_name: str = "early"
 ) -> dict:
-    """Early fusion (Table IV) on the cached image + text features; run name "early", with test CSV."""
-    return train_fusion(config, build_early_fusion, EARLY_INPUTS, "early",
+    """Early fusion (Table IV) on the cached image + text features, with test CSV.
+
+    run_name: "early" for the main run; "early_seed<N>" for the extra seeds (mean +- std).
+    """
+    return train_fusion(config, build_early_fusion, EARLY_INPUTS, run_name,
                         ckpt_root, on_epoch_end, save_test_predictions=True)
