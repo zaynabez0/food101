@@ -329,3 +329,38 @@ def extract_features(image_ckpt: str = "", text_ckpt: str = "", splits: str = ""
 
     run_extraction(config, build_image_model(image_cfg), build_text_model(text_cfg),
                    on_split_done=ckpt_volume.commit)
+
+
+# --- Late fusion (Table III): MLP over the cached softmax vectors, CPU only ---
+FUSION_TIMEOUT_S = 60 * 60               # 1 hour: ~61k rows of 2 x 101 floats, a few seconds per epoch
+
+
+@app.function(
+    image=image,
+    cpu=4,                               # no GPU: ~98k parameters, inputs already in memory
+    timeout=FUSION_TIMEOUT_S,
+    volumes={CKPT_DIR: ckpt_volume},     # features, checkpoints and results all live in /ckpt
+)
+def train_late(merge: str = "concat", config_name: str = "late_fusion.yaml") -> None:
+    """Train LateFusion with merge = concat | sum | max | weighted on /ckpt/features/{split}.pt.
+
+    Writes /ckpt/late_{merge}/{best,last}.pt and /ckpt/results/late_{merge}.json (with test metrics).
+    """
+    from src.split import load_config
+    from src.train_fusion import train_late_fusion
+
+    config = {**load_config(f"{CONFIGS_DIR}/{config_name}"), "merge": merge}
+    train_late_fusion(config, CKPT_DIR, on_epoch_end=ckpt_volume.commit)
+    ckpt_volume.commit()                 # final JSON with the test metrics
+
+
+# --- No-training baselines on the cached softmax: image alone, text alone, (p_img + p_txt) / 2 ---
+@app.function(image=image, cpu=2, volumes={CKPT_DIR: ckpt_volume})
+def eval_baselines(config_name: str = "late_fusion.yaml") -> None:
+    """Accuracy on val and test of image-only, text-only and averaged softmax -> /ckpt/results/baselines.json."""
+    from src.split import load_config
+    from src.train_fusion import evaluate_baselines
+
+    config = load_config(f"{CONFIGS_DIR}/{config_name}")   # only features_dir is used
+    evaluate_baselines(config["features_dir"], f"{CKPT_DIR}/results/baselines.json")
+    ckpt_volume.commit()

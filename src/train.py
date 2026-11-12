@@ -45,8 +45,14 @@ def forward_batch(
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Move a batch to device and run the model on the inputs its mode needs.
 
+    mode "fusion": batch = (*model_inputs, labels) from a TensorDataset of cached features,
+    e.g. (image_probs (B, 101), text_probs (B, 101), labels (B,)).
     Out: logits (B, C), aux_logits (B, C) or None, labels (B,).
     """
+    if mode == "fusion":
+        *inputs, labels = (t.to(device, non_blocking=True) for t in batch)
+        return model(*inputs), None, labels
+
     image, input_ids, attention_mask, labels = (t.to(device, non_blocking=True) for t in batch)
     if mode == "image":
         inputs = (image,)                                  # (B, 3, 299, 299)
