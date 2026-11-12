@@ -1,0 +1,13 @@
+case,sample_id,title,true,image_pred,text_pred,fusion_pred,file
+a_image_wrong_fusion_right,crab_cakes_316.jpg,Maryland Crab Cakes Recipe (Little Filler) | Sally's Baking,crab_cakes,paella,crab_cakes,crab_cakes,a_image_wrong_fusion_right/crab_cakes_316.jpg
+a_image_wrong_fusion_right,breakfast_burrito_901.jpg,Breakfast Burrito - Winter Brunch Recipes - Delish.com,breakfast_burrito,clam_chowder,breakfast_burrito,breakfast_burrito,a_image_wrong_fusion_right/breakfast_burrito_901.jpg
+a_image_wrong_fusion_right,macarons_193.jpg,BraveTart: Macarons are for eating,macarons,crab_cakes,macarons,macarons,a_image_wrong_fusion_right/macarons_193.jpg
+a_image_wrong_fusion_right,huevos_rancheros_735.jpg,Huevos Rancheros,huevos_rancheros,cup_cakes,huevos_rancheros,huevos_rancheros,a_image_wrong_fusion_right/huevos_rancheros_735.jpg
+b_text_wrong_fusion_right,crab_cakes_391.jpg,Kitchen Encounters: February 2011,crab_cakes,oysters,croque_madame,crab_cakes,b_text_wrong_fusion_right/crab_cakes_391.jpg
+b_text_wrong_fusion_right,takoyaki_245.jpg,Eating myself bankrupt in Osaka «  Street Foodie — Street Food Reviews,takoyaki,takoyaki,sashimi,takoyaki,b_text_wrong_fusion_right/takoyaki_245.jpg
+b_text_wrong_fusion_right,cup_cakes_937.jpg,Remodelaholic | 25 Best S'more Recipes,cup_cakes,cup_cakes,nachos,cup_cakes,b_text_wrong_fusion_right/cup_cakes_937.jpg
+b_text_wrong_fusion_right,creme_brulee_96.jpg,Easy recipes,creme_brulee,creme_brulee,beet_salad,creme_brulee,b_text_wrong_fusion_right/creme_brulee_96.jpg
+c_both_wrong_fusion_right,beef_tartare_261.jpg,The Silver Spoon Food & Wine,beef_tartare,beef_carpaccio,cheese_plate,beef_tartare,c_both_wrong_fusion_right/beef_tartare_261.jpg
+c_both_wrong_fusion_right,french_onion_soup_224.jpg,Happy 2012 ! My Top 10 Recipes of 2011 and Top 3 Books of 2011 - Hezzi-D's Books and Cooks,french_onion_soup,ravioli,mussels,french_onion_soup,c_both_wrong_fusion_right/french_onion_soup_224.jpg
+c_both_wrong_fusion_right,peking_duck_546.jpg,Mosaic Chinese Chef Tasting Menu | gastrofork,peking_duck,beef_tartare,hot_and_sour_soup,peking_duck,c_both_wrong_fusion_right/peking_duck_546.jpg
+c_both_wrong_fusion_right,poutine_347.jpg,You're Not in Montreal,poutine,french_fries,lobster_roll_sandwich,poutine,c_both_wrong_fusion_right/poutine_347.jpg

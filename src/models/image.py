@@ -32,7 +32,11 @@ class ImageClassifier(nn.Module):
         super().__init__()
         weights = Inception_V3_Weights.IMAGENET1K_V1 if pretrained else None
         # aux_logits=True is required to load the pretrained weights; we decide below whether to keep it.
-        backbone = inception_v3(weights=weights, aux_logits=True)
+        # transform_input=True always: torchvision only turns it on when weights are given, so a model
+        # built with pretrained=False (e.g. to load our own checkpoint at inference) would otherwise feed
+        # the network differently scaled inputs than in training. init_weights=False: every weight comes
+        # from ImageNet or from our checkpoint, so the slow random init is skipped.
+        backbone = inception_v3(weights=weights, aux_logits=True, transform_input=True, init_weights=False)
         self.feature_dim = backbone.fc.in_features  # 2048 = channels of Mixed_7c
 
         # Remove torchvision's own head (global pool, dropout 0.5, FC 2048->1000); ours replaces it.

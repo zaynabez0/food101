@@ -2,6 +2,7 @@
 
 Only infrastructure lives here; it calls into src/train.py.
 """
+from pathlib import Path
 from typing import Callable
 
 import modal
@@ -10,6 +11,7 @@ import modal
 app = modal.App("food101-fusion")
 
 CONFIGS_DIR = "/root/configs"  # where configs/ lives inside the container
+PROJECT_DIR = Path(__file__).resolve().parent  # so the app also works when imported from notebooks/
 
 # --- Image: the software environment of the cloud container ---
 image = (
@@ -25,7 +27,7 @@ image = (
         "six",  # kaggle 2.2.5 imports six but does not declare it as a dependency
     )
     .add_local_python_source("src")  # copies your local src/ folder into the container
-    .add_local_dir("configs", remote_path=CONFIGS_DIR)  # YAML configs, attached at start (no rebuild)
+    .add_local_dir(PROJECT_DIR / "configs", remote_path=CONFIGS_DIR)  # YAML configs, attached at start (no rebuild)
 )
 
 # --- Volumes: persistent storage ---
@@ -411,3 +413,63 @@ def export_examples(n_per_case: int = 4, seed: int = 0) -> None:
         seed=seed,
     )
     ckpt_volume.commit()
+
+
+# --- Inference: a fusion model (default: best on val) on new image + title pairs ---
+INFERENCE_KWARGS = dict(
+    image=image,
+    cpu=4,                               # a few samples: CPU is enough, and no GPU queue
+    timeout=15 * 60,
+    volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+    secrets=[hf_secret],                 # bert-base-uncased config + tokenizer
+)
+
+
+def build_predictor(run_name: str):
+    """FusionPredictor for run_name ("" = best fusion run on validation); runs inside the container."""
+    from src.data import load_class_names
+    from src.predict import FusionPredictor
+    from src.split import load_config
+
+    data = load_config(f"{CONFIGS_DIR}/data.yaml")
+    return FusionPredictor(
+        image_cfg={**data, **load_config(f"{CONFIGS_DIR}/image.yaml")},
+        text_cfg={**data, **load_config(f"{CONFIGS_DIR}/text.yaml")},
+        ckpt_root=CKPT_DIR,
+        class_names=load_class_names(data["data_dir"]),
+        run_name=run_name or None,
+    )
+
+
+@app.function(**INFERENCE_KWARGS)
+def predict_samples(images: list[bytes], titles: list[str], top_k: int = 3, run_name: str = "") -> dict:
+    """Raw image files + titles -> {model, val_acc, test_acc, predictions: [top-k of image/text/fusion]}."""
+    predictor = build_predictor(run_name)
+    return {
+        "model": predictor.run_name,
+        "val_acc": predictor.val_acc,
+        "test_acc": predictor.test_acc,
+        "predictions": predictor.predict(images, titles, top_k),
+    }
+
+
+@app.function(**INFERENCE_KWARGS)
+def predict_test_samples(
+    sample_ids: list[str] | None = None, n_random: int = 4, seed: int = 0, top_k: int = 3, run_name: str = ""
+) -> dict:
+    """Test samples read from the volume (given ids, or n_random random ones) -> same output as
+    predict_samples, plus "samples": [{sample_id, title, true, image bytes}] to display them."""
+    from src.predict import load_test_samples
+    from src.split import load_config
+
+    data = load_config(f"{CONFIGS_DIR}/data.yaml")
+    samples = load_test_samples(data["splits_dir"], data["data_dir"], sample_ids or [], n_random, seed)
+    predictor = build_predictor(run_name)
+    predictions = predictor.predict([s["image"] for s in samples], [s["title"] for s in samples], top_k)
+    return {
+        "model": predictor.run_name,
+        "val_acc": predictor.val_acc,
+        "test_acc": predictor.test_acc,
+        "predictions": predictions,
+        "samples": samples,
+    }
