@@ -364,3 +364,23 @@ def eval_baselines(config_name: str = "late_fusion.yaml") -> None:
     config = load_config(f"{CONFIGS_DIR}/{config_name}")   # only features_dir is used
     evaluate_baselines(config["features_dir"], f"{CKPT_DIR}/results/baselines.json")
     ckpt_volume.commit()
+
+
+# --- Early fusion (Table IV): MLP over the cached image (2048) + text (128) features, CPU only ---
+@app.function(
+    image=image,
+    cpu=4,                               # no GPU: ~354k parameters, inputs already in memory
+    timeout=FUSION_TIMEOUT_S,
+    volumes={CKPT_DIR: ckpt_volume},
+)
+def train_early(config_name: str = "early_fusion.yaml") -> None:
+    """Train EarlyFusion on /ckpt/features/{split}.pt.
+
+    Writes /ckpt/early/{best,last}.pt, /ckpt/results/early.json and
+    /ckpt/results/early_test_predictions.csv (id, label, image / text / early fusion prediction).
+    """
+    from src.split import load_config
+    from src.train_fusion import train_early_fusion
+
+    train_early_fusion(load_config(f"{CONFIGS_DIR}/{config_name}"), CKPT_DIR, on_epoch_end=ckpt_volume.commit)
+    ckpt_volume.commit()                 # final JSON + CSV

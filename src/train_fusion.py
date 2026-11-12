@@ -1,10 +1,13 @@
 """Train a fusion model on the cached features of src/extract.py with the generic loop of src/train.py.
 
 Late fusion (Table III): inputs = image_probs (N, 101) + text_probs (N, 101) of each split.
+Early fusion (Table IV): inputs = image_features (N, 2048) + text_features (N, 128).
 - train split: gradient updates; val split: best epoch, LR drops, early stopping (inside fit);
 - test split: evaluated once, at the end, with the best-on-val weights.
-Results: /ckpt/results/late_{merge}.json = per-epoch history + test metrics (+ learned alpha).
+Results: /ckpt/results/{late_<merge>,early}.json = per-epoch history + test metrics (+ learned alpha);
+early fusion also writes /ckpt/results/early_test_predictions.csv (one row per test sample).
 """
+import csv
 import json
 import os
 import shutil
@@ -14,11 +17,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.models.fusion import build_late_fusion
+from src.models.fusion import build_early_fusion, build_late_fusion
 from src.train import build_optimizer, build_scheduler, evaluate, fit, get_device, set_seed
 
 SPLITS = ("train", "val", "test")
-LATE_INPUTS = ("image_probs", "text_probs")   # keys of {split}.pt, in the model's argument order
+LATE_INPUTS = ("image_probs", "text_probs")         # keys of {split}.pt, in the model's argument order
+EARLY_INPUTS = ("image_features", "text_features")  # (N, 2048), (N, 128)
 
 
 def load_features(features_dir: str, splits: tuple[str, ...] = SPLITS) -> dict[str, dict]:
@@ -89,8 +93,12 @@ def train_fusion(
     run_name: str,
     ckpt_root: str,
     on_epoch_end: Callable[[], None] | None = None,
+    save_test_predictions: bool = False,
 ) -> dict:
-    """Train on train, select on val (fit), test once. Out: the final results dict (also saved as JSON)."""
+    """Train on train, select on val (fit), test once. Out: the final results dict (also saved as JSON).
+
+    save_test_predictions: also write results/<run_name>_test_predictions.csv (see write_test_predictions).
+    """
     set_seed(config["seed"])                       # before building the model: same init every run
     device = get_device()
     features = load_features(config["features_dir"])
@@ -115,6 +123,9 @@ def train_fusion(
     model.load_state_dict(best["model"])
     test_loader = make_loader(features["test"], input_keys, config["batch_size"], shuffle=False)
     test_metrics = evaluate(model, test_loader, device, "fusion", use_amp=False)
+    if save_test_predictions:
+        predictions_path = os.path.join(ckpt_root, "results", f"{run_name}_test_predictions.csv")
+        write_test_predictions(predictions_path, features["test"], predict(model, test_loader, device))
 
     results = {
         "config": config,
@@ -132,6 +143,36 @@ def train_fusion(
     write_json(results_path, results)
     print_summary(run_name, results)
     return results
+
+
+@torch.inference_mode()
+def predict(model: nn.Module, loader: DataLoader, device: torch.device) -> torch.Tensor:
+    """Predicted class of every row, in loader order (shuffle=False). Out: (N,) int64 on CPU."""
+    model.eval()
+    preds = []
+    for *inputs, _ in loader:                                   # batch = (*inputs, labels)
+        logits = model(*(t.to(device) for t in inputs))         # (B, 101)
+        preds.append(logits.argmax(dim=1).cpu())
+    return torch.cat(preds)
+
+
+def write_test_predictions(path: str, test_features: dict, fusion_preds: torch.Tensor) -> None:
+    """CSV, one row per test sample: sample_id, label, image_pred, text_pred, fusion_pred (class indices)."""
+    if fusion_preds.shape[0] != test_features["labels"].shape[0]:
+        raise RuntimeError("fusion predictions and test features do not have the same number of rows")
+    columns = {
+        "sample_id": test_features["sample_ids"],                        # image filename
+        "label": test_features["labels"].tolist(),
+        "image_pred": test_features["image_probs"].argmax(dim=1).tolist(),
+        "text_pred": test_features["text_probs"].argmax(dim=1).tolist(),
+        "fusion_pred": fusion_preds.tolist(),
+    }
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)                                         # header
+        writer.writerows(zip(*columns.values()))                         # row i = sample i
+    print(f"saved {path}: {len(columns['label'])} rows")
 
 
 def write_json(path: str, data: dict) -> None:
@@ -158,3 +199,11 @@ def train_late_fusion(
     """Late fusion (Table III) on the cached softmax vectors; run name late_{merge}."""
     return train_fusion(config, build_late_fusion, LATE_INPUTS, f"late_{config['merge']}",
                         ckpt_root, on_epoch_end)
+
+
+def train_early_fusion(
+    config: dict, ckpt_root: str, on_epoch_end: Callable[[], None] | None = None
+) -> dict:
+    """Early fusion (Table IV) on the cached image + text features; run name "early", with test CSV."""
+    return train_fusion(config, build_early_fusion, EARLY_INPUTS, "early",
+                        ckpt_root, on_epoch_end, save_test_predictions=True)

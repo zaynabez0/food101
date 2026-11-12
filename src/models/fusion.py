@@ -1,8 +1,10 @@
 """Fusion models over the cached features of src/extract.py.
 
 LateFusion (Table III): merge the image and text softmax vectors, then an MLP.
-In:  image_probs (B, 101), text_probs (B, 101) from /ckpt/features/{split}.pt
-Out: logits (B, 101)
+    In:  image_probs (B, 101), text_probs (B, 101) from /ckpt/features/{split}.pt
+EarlyFusion (Table IV): project the image features to the text size, concatenate, then an MLP.
+    In:  image_features (B, 2048), text_features (B, 128) from /ckpt/features/{split}.pt
+Out (both): logits (B, 101)
 """
 import torch
 from torch import nn
@@ -78,6 +80,74 @@ def build_late_fusion(config: dict) -> LateFusion:
     )
 
 
+class EarlyFusion(nn.Module):
+    """Image branch (Dropout -> Linear -> ReLU) to text_dim, concat with text, then a 2-layer head."""
+
+    def __init__(
+        self,
+        image_dim: int,
+        text_dim: int,
+        image_proj_dim: int,
+        image_dropout: float,
+        hidden_dim: int,
+        num_classes: int,
+    ) -> None:
+        super().__init__()
+        # --- Table IV, image branch: 2048 -> 128 ---
+        self.image_branch = nn.Sequential(
+            nn.Dropout(image_dropout),
+            nn.Linear(image_dim, image_proj_dim),   # (B, 2048) -> (B, 128)
+            nn.ReLU(),
+        )
+        # --- Table IV, head over the concatenation ---
+        self.head = nn.Sequential(
+            nn.Linear(image_proj_dim + text_dim, hidden_dim),   # (B, 256) -> (B, 256)
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_classes),                 # (B, 256) -> (B, 101), logits
+        )
+
+    def fuse(self, image_features: torch.Tensor, text_features: torch.Tensor) -> torch.Tensor:
+        """(B, 2048), (B, 128) -> fused vector (B, 256) = [projected image, text]."""
+        image_proj = self.image_branch(image_features)          # (B, 128)
+        return torch.cat([image_proj, text_features], dim=1)    # (B, 256)
+
+    def forward(self, image_features: torch.Tensor, text_features: torch.Tensor) -> torch.Tensor:
+        """(B, 2048), (B, 128) cached features -> logits (B, 101)."""
+        return self.head(self.fuse(image_features, text_features))
+
+
+def build_early_fusion(config: dict) -> EarlyFusion:
+    """Build EarlyFusion from configs/early_fusion.yaml (flat keys)."""
+    return EarlyFusion(
+        image_dim=config["image_dim"],
+        text_dim=config["text_dim"],
+        image_proj_dim=config["image_proj_dim"],
+        image_dropout=config["image_dropout"],
+        hidden_dim=config["hidden_dim"],
+        num_classes=config["num_classes"],
+    )
+
+
+def early_shape_check(config: dict) -> None:
+    """Dummy cached features through EarlyFusion, printing the shape after every step."""
+    batch = config["shape_check_batch_size"]
+    image_features = torch.randn(batch, config["image_dim"]).relu()   # (B, 2048), >= 0 like pooled ReLU maps
+    text_features = torch.randn(batch, config["text_dim"]).tanh()     # (B, 128), in (-1, 1) like an LSTM h_n
+    model = build_early_fusion(config).eval()
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"EarlyFusion: {n_params:,} params")
+
+    with torch.no_grad():
+        image_proj = model.image_branch(image_features)
+        fused = torch.cat([image_proj, text_features], dim=1)
+        hidden = model.head[1](model.head[0](fused))
+        logits = model(image_features, text_features)
+    for name, t in [("image_features", image_features), ("text_features", text_features),
+                    ("image_proj", image_proj), ("fused (concat)", fused),
+                    ("hidden", hidden), ("logits", logits)]:
+        print(f"  {name:<15} {tuple(t.shape)}")
+
+
 def shape_check(config: dict) -> None:
     """Build every merge mode and print the merged and output shapes for dummy softmax inputs."""
     batch, classes = config["shape_check_batch_size"], config["num_classes"]
@@ -100,3 +170,5 @@ if __name__ == "__main__":
 
     with open("configs/late_fusion.yaml") as f:
         shape_check(yaml.safe_load(f))
+    with open("configs/early_fusion.yaml") as f:
+        early_shape_check(yaml.safe_load(f))

@@ -1,1 +1,25 @@
-# Hyperparameters for: early_fusion. Filled in when the corresponding module is implemented.
+# Early fusion (Table IV): MLP over the cached image (2048) + text (128) features.
+# --- Architecture ---
+num_classes: 101
+image_dim: 2048          # InceptionV3 pooled features (image_features in {split}.pt)
+text_dim: 128            # LSTM hidden state (text_features in {split}.pt)
+image_proj_dim: 128      # image branch: Dropout -> Linear(2048 -> 128) -> ReLU
+image_dropout: 0.4
+hidden_dim: 256          # head: concat (256) -> Linear(256 -> 256) -> ReLU -> Linear(256 -> 101)
+shape_check_batch_size: 4
+
+# --- Training (src/train_fusion.py) ---
+model: early_fusion
+features_dir: /ckpt/features   # {train,val,test}.pt from src/extract.py
+optimizer: sgd
+momentum: 0.9                  # CHOICE
+lr: 0.01
+lr_schedule: [0.01, 0.001, 0.0001]   # article, Section V
+scheduler: plateau
+patience: 2                    # article : baisse après 2 epochs sans amélioration
+early_stopping: 8              # optional: remove to always run all epochs
+epochs: 30
+batch_size: 256
+seed: 42
+amp: false                     # runs on CPU
+log_every: 0
