@@ -10,7 +10,7 @@ from typing import Callable
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from src.data import FoodDataset, load_tokenizer
 from src.train import get_device
@@ -35,9 +35,11 @@ def extract_split(
     config: dict,
     device: torch.device,
 ) -> dict:
-    """Run both models over one split in file order. Out: dict of row-aligned CPU tensors."""
+    """Run both models over one split in file order. Out: dict of row-aligned CPU tensors.
+    config["max_items"] (optional, smoke runs) keeps only the first N rows."""
     dataset = FoodDataset(split, "both", config, load_tokenizer(config), augment=False)
-    loader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=False,
+    n = min(config.get("max_items") or len(dataset), len(dataset))
+    loader = DataLoader(Subset(dataset, range(n)), batch_size=config["batch_size"], shuffle=False,
                         num_workers=config["num_workers"])
     use_amp = config["amp"] and device.type == "cuda"
     parts = {k: [] for k in ("image_features", "image_probs", "text_features", "text_probs", "labels")}
@@ -57,18 +59,18 @@ def extract_split(
         parts["labels"].append(labels)
 
     out = {k: torch.cat(v) for k, v in parts.items()}
-    out["sample_ids"] = dataset.sample_ids
-    check_alignment(out, dataset)
+    out["sample_ids"] = dataset.sample_ids[:n]
+    check_alignment(out, dataset.labels[:n])
     return out
 
 
-def check_alignment(out: dict, dataset: FoodDataset) -> None:
-    """Raise if the saved rows are not exactly the dataset rows, in the dataset's order."""
-    n = len(dataset)
+def check_alignment(out: dict, expected_labels: torch.Tensor) -> None:
+    """Raise if the saved rows are not exactly the first len(expected_labels) dataset rows, in order."""
+    n = len(expected_labels)
     for key in ("image_features", "image_probs", "text_features", "text_probs", "labels"):
         if out[key].shape[0] != n:
             raise RuntimeError(f"{key} has {out[key].shape[0]} rows, dataset has {n}")
-    if not torch.equal(out["labels"], dataset.labels):
+    if not torch.equal(out["labels"], expected_labels):
         raise RuntimeError("labels collected from the loader are not in dataset order")
     if len(out["sample_ids"]) != n or len(set(out["sample_ids"])) != n:
         raise RuntimeError("sample_ids missing or not unique")

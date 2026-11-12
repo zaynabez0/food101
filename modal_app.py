@@ -50,6 +50,9 @@ DATA_DIR = "/data"                          # where data_volume is mounted
 DOWNLOAD_TIMEOUT_S = 60 * 60                # Modal's default (300 s) is too short for a multi-GB zip
 
 kaggle_secret = modal.Secret.from_name("kaggle-secret")
+# Sets HF_TOKEN, which transformers reads by itself when downloading bert-base-uncased
+# (authenticated downloads: higher rate limits, no "unauthenticated requests" warning).
+hf_secret = modal.Secret.from_name("huggingface-secret")
 
 
 @app.function(
@@ -181,7 +184,7 @@ def split_data(config_name: str = "split.yaml") -> None:
 
 
 # --- Data smoke test: one batch per mode, prints shapes (CPU only) ---
-@app.function(image=image, volumes={DATA_DIR: data_volume}, cpu=4)
+@app.function(image=image, volumes={DATA_DIR: data_volume}, cpu=4, secrets=[hf_secret])
 def test_data(config_name: str = "data.yaml") -> None:
     """Run src/data.py's smoke test with configs/<config_name>."""
     from src.data import smoke_test
@@ -239,6 +242,7 @@ def train_image(smoke: bool = False, config_name: str = "image.yaml") -> None:
     cpu=4,                     # text batches are pre-tokenized tensors: little CPU work
     timeout=TRAIN_TIMEOUT_S,
     volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+    secrets=[hf_secret],
 )
 def train_text(smoke: bool = False, config_name: str = "text.yaml") -> None:
     """Train the text model with configs/data.yaml + configs/<config_name> (same options as train_image)."""
@@ -281,7 +285,7 @@ def run_training(config_name: str, mode: str, build_model: Callable[[dict], obje
 
 
 # --- Text model shape check: dummy batch through TextClassifier (CPU only) ---
-@app.function(image=image, cpu=4)
+@app.function(image=image, cpu=4, secrets=[hf_secret])
 def test_text_model(config_name: str = "text.yaml") -> None:
     """Run src/models/text.py's shape check with configs/data.yaml + configs/<config_name>."""
     from src.models.text import shape_check
@@ -297,10 +301,12 @@ def test_text_model(config_name: str = "text.yaml") -> None:
     cpu=8,                     # matches num_workers: 8 in extract.yaml (JPEG decoding)
     timeout=TRAIN_TIMEOUT_S,
     volumes={DATA_DIR: data_volume, CKPT_DIR: ckpt_volume},
+    secrets=[hf_secret],
 )
-def extract_features(image_ckpt: str = "", text_ckpt: str = "", splits: str = "") -> None:
+def extract_features(image_ckpt: str = "", text_ckpt: str = "", splits: str = "", smoke: bool = False) -> None:
     """Run src/extract.py. image_ckpt / text_ckpt override the best.pt paths of configs/extract.yaml;
-    splits (e.g. "test" or "val,test") overrides its list of splits."""
+    splits (e.g. "test" or "val,test") overrides its list of splits.
+    smoke: only the first smoke_max_items rows per split, saved to smoke_features_dir."""
     from src.extract import run_extraction
     from src.models.image import build_image_model
     from src.models.text import build_text_model
@@ -317,6 +323,9 @@ def extract_features(image_ckpt: str = "", text_ckpt: str = "", splits: str = ""
         config["text_checkpoint"] = text_ckpt
     if splits:
         config["splits"] = splits.split(",")
+    if smoke:
+        config["max_items"] = config["smoke_max_items"]
+        config["features_dir"] = config["smoke_features_dir"]
 
     run_extraction(config, build_image_model(image_cfg), build_text_model(text_cfg),
                    on_split_done=ckpt_volume.commit)

@@ -6,3 +6,6 @@ splits: [train, val, test]
 batch_size: 128                         # inference only: no gradients, so larger than training
 num_workers: 8
 amp: true                               # float16 forward like the training-time val pass; saved as float32
+# --- Smoke run (modal run modal_app.py::extract_features --smoke) ---
+smoke_max_items: 500                    # first N rows of each split
+smoke_features_dir: /ckpt/features_smoke  # never overwrites the real features
