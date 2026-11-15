@@ -37,10 +37,10 @@ def stratified_split(
     """Split df into (train, val) so that every class keeps the same proportion in both."""
     train_df, val_df = train_test_split(
         df, test_size=val_fraction, stratify=df["label"], random_state=seed
-    )
+    ) # here stratify=df["label"] ensures that the split is stratified by the label column
     return train_df.reset_index(drop=True), val_df.reset_index(drop=True)
 
-
+# Sanity check
 def summarize(name: str, df: pd.DataFrame) -> None:
     """Print size, class count, smallest/largest class and missing titles of a split."""
     per_class = df["label"].value_counts()

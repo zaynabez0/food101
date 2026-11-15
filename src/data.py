@@ -33,6 +33,7 @@ def build_image_transform(config: dict, train: bool) -> v2.Compose:
     """PIL image -> normalized float tensor (3, 299, 299). Random crop + flip only if train."""
     size = config["image_size"]
     if train:
+        # Data augmentation: random crop + horizontal flip.
         resize_ops = [
             v2.RandomResizedCrop(size, scale=tuple(config["crop_scale"]), antialias=True),
             v2.RandomHorizontalFlip(),
@@ -58,7 +59,7 @@ def clean_title(title: str) -> str:
 def tokenize_titles(
     titles: list[str], tokenizer: PreTrainedTokenizerBase, max_length: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Tokenize all titles at once. Out: input_ids (N, L), attention_mask (N, L), L = max_length."""
+    """Tokenize all titles at once. Out: input_ids (N, L), attention_mask (N, L), L = max_length.""" # N number of titles
     encoded = tokenizer(
         titles,
         padding="max_length",   # every title padded to the same length L -> easy batching

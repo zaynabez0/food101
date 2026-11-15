@@ -11,7 +11,7 @@ imagenet_mean: [0.485, 0.456, 0.406]
 imagenet_std: [0.229, 0.224, 0.225]
 
 # --- Text (BERT input) ---
-tokenizer_name: bert-base-uncased
+tokenizer_name: bert-base-uncased # Transformers model pretrained on a large corpus of English data in a self-supervised fashion with 110M parameters
 max_length: 64                  # CHOICE: tokens per title incl. [CLS]/[SEP]; titles are short web
                                 #         page titles, the smoke test prints how many hit this limit
 

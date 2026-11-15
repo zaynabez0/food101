@@ -185,6 +185,20 @@ def split_data(config_name: str = "split.yaml") -> None:
     print("Volume committed.")
 
 
+@app.function(image=image, volumes={DATA_DIR: data_volume})
+def summarize_splits(config_name: str = "split.yaml") -> None:
+    """Print src/split.py's summary of the existing /data/splits/*.csv (read-only, no re-split)."""
+    import os
+
+    import pandas as pd
+
+    from src.split import load_config, summarize
+
+    splits_dir = load_config(f"{CONFIGS_DIR}/{config_name}")["splits_dir"]
+    for name in ("train", "val", "test"):
+        summarize(name, pd.read_csv(os.path.join(splits_dir, f"{name}.csv")))
+
+
 # --- Data smoke test: one batch per mode, prints shapes (CPU only) ---
 @app.function(image=image, volumes={DATA_DIR: data_volume}, cpu=4, secrets=[hf_secret])
 def test_data(config_name: str = "data.yaml") -> None:
