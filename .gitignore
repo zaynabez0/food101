@@ -4,3 +4,5 @@ checkpoints/
 .env
 kaggle.json
 food101/
+_pycache_/
+CLAUDE.md
